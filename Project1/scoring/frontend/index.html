@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CareerOS — Multi-Platform Scout & Live Strategist Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f4f6f9; }
+        .hero-section { background: linear-gradient(135deg, #1e3c72, #2a5298); color: white; padding: 2rem 0; }
+        .platform-card { border-radius: 12px; border: none; height: 100%; }
+        .job-scroll-container { max-height: 600px; overflow-y: auto; }
+        .analysis-box { background: #ffffff; border-left: 5px solid #0d6efd; border-radius: 8px; }
+        .match-box { background: #ffffff; border-left: 5px solid #198754; border-radius: 8px; }
+        .source-note { font-size: 0.75rem; color: #6c757d; }
+    </style>
+</head>
+<body>
+
+    <div class="hero-section text-center mb-4">
+        <h2>🤖 CareerOS Multi-Source Scout & Strategist Agent</h2>
+        <p class="lead">Retrieving Live Job Postings + Real Description & Skill Dissection</p>
+    </div>
+
+    <div class="container-fluid px-4 mb-5">
+        <!-- Search Input Bar -->
+        <div class="card p-4 mb-4 mx-auto shadow-sm" style="max-width: 800px;">
+            <h5 class="card-title mb-3">🔍 Scout Multi-Platform Job Openings</h5>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <input type="text" id="roleInput" class="form-control" placeholder="Role (e.g. Python Developer)">
+                </div>
+                <div class="col-md-4">
+                    <input type="text" id="locInput" class="form-control" placeholder="Location (e.g. Remote / India)">
+                </div>
+                <div class="col-md-2">
+                    <button onclick="searchJobs()" class="btn btn-primary w-100">Scout All</button>
+                </div>
+            </div>
+            <p class="source-note mt-2 mb-0">Sources: LinkedIn, Unstop, RemoteOK, Arbeitnow, Devpost (live public feeds — no fake/synthetic listings).</p>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center d-none my-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Scout Agent querying job portals in parallel...</p>
+        </div>
+
+        <!-- Output Grid -->
+        <div id="jobResults" class="row g-3"></div>
+
+        <!-- Strategist Analysis Output View -->
+        <div id="analysisCard" class="card p-4 mt-4 d-none analysis-box shadow mx-auto" style="max-width: 900px;">
+            <h4 class="text-primary mb-3">🎯 Live Strategist Agent Analysis</h4>
+            <div id="analysisContent"></div>
+        </div>
+
+        <!-- Recruiter-Match Agent -->
+        <div id="matchCard" class="card p-4 mt-4 d-none match-box shadow mx-auto" style="max-width: 900px;">
+            <h4 class="text-success mb-3">🧭 Recruiter-Match Agent — Your Fit Score</h4>
+            <div class="row g-2 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">Your skills (comma-separated)</label>
+                    <input type="text" id="profSkills" class="form-control" placeholder="Python, Git, React">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Years of experience</label>
+                    <input type="text" id="profYears" class="form-control" value="1">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Location preference</label>
+                    <input type="text" id="profLoc" class="form-control" value="Remote">
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label small mb-1">Interests (comma-separated)</label>
+                    <input type="text" id="profInterests" class="form-control" placeholder="fintech, backend">
+                </div>
+            </div>
+            <button onclick="calculateMatch()" class="btn btn-outline-success mb-3">Calculate Fit Score</button>
+            <div id="matchContent"></div>
+        </div>
+    </div>
+
+    <script>
+        const portalColors = {
+            "LinkedIn": "border-primary",
+            "Unstop": "border-warning",
+            "RemoteOK": "border-info",
+            "Arbeitnow": "border-success",
+            "Devpost": "border-danger"
+        };
+
+        // Holds the currently analyzed job + its Strategist output, so the
+        // Recruiter-Match Agent has something to score against.
+        let currentJob = null;
+        let currentAnalysis = null;
+
+        async function searchJobs() {
+            const role = document.getElementById('roleInput').value || "Python Developer";
+            const location = document.getElementById('locInput').value || "Remote";
+
+            document.getElementById('loading').classList.remove('d-none');
+            document.getElementById('jobResults').innerHTML = '';
+            document.getElementById('analysisCard').classList.add('d-none');
+            document.getElementById('matchCard').classList.add('d-none');
+
+            try {
+                const res = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role: role, location: location })
+                });
+
+                const data = await res.json();
+                document.getElementById('loading').classList.add('d-none');
+
+                if (data.error) {
+                    document.getElementById('jobResults').innerHTML =
+                        `<div class="col-12"><div class="alert alert-danger">${data.error}</div></div>`;
+                    return;
+                }
+
+                let gridHtml = '';
+
+                for (const [portal, jobs] of Object.entries(data.sources)) {
+                    const colorClass = portalColors[portal] || "border-dark";
+
+                    gridHtml += `
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card p-3 platform-card border-top ${colorClass} border-4 shadow-sm bg-white">
+                                <h5 class="mb-3 d-flex justify-content-between align-items-center">
+                                    <span>${portal}</span>
+                                    <span class="badge bg-light text-dark border">${jobs.length} roles</span>
+                                </h5>
+                                <div class="job-scroll-container">
+                    `;
+
+                    if (jobs.length === 0) {
+                        gridHtml += `<p class="text-muted small mb-0">No live results for this search on ${portal} right now.</p>`;
+                    }
+
+                    jobs.forEach(job => {
+                        const safeTitle = job.title.replace(/'/g, "\\'");
+                        const safeCompany = job.company.replace(/'/g, "\\'");
+                        const safeLocation = (job.location || location).replace(/'/g, "\\'");
+                        const safeLink = job.link.replace(/'/g, "\\'");
+
+                        gridHtml += `
+                            <div class="card p-2 mb-2 bg-light border-0">
+                                <h6 class="mb-1 text-truncate">${job.title}</h6>
+                                <small class="text-muted d-block mb-2">${job.company} • ${job.location}</small>
+                                <div class="d-flex justify-content-between">
+                                    <button onclick="analyzeJob('${safeTitle}', '${safeCompany}', '${safeLocation}', '${safeLink}')" class="btn btn-sm btn-outline-success">Analysis</button>
+                                    <a href="${job.link}" target="_blank" class="btn btn-sm btn-outline-primary">View</a>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    gridHtml += `</div></div></div>`;
+                }
+
+                document.getElementById('jobResults').innerHTML = gridHtml;
+            } catch (err) {
+                document.getElementById('loading').classList.add('d-none');
+                alert("Error fetching job results. Check server terminal for details.");
+            }
+        }
+
+        async function analyzeJob(title, company, location, link) {
+            document.getElementById('analysisCard').classList.remove('d-none');
+            document.getElementById('matchCard').classList.add('d-none');
+            document.getElementById('analysisContent').innerHTML = '<div class="spinner-border spinner-border-sm text-primary"></div> Strategist Agent is fetching webpage content & dissecting requirements...';
+
+            currentJob = { title, company, location, link };
+            currentAnalysis = null;
+
+            try {
+                const res = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: title, company: company, location: location, link: link })
+                });
+
+                const data = await res.json();
+
+                if (data.error) {
+                    document.getElementById('analysisContent').innerHTML = `<p class="text-danger">${data.error}</p>`;
+                    return;
+                }
+
+                const a = data.analysis;
+                currentAnalysis = a;
+
+                const sourceLabel = {
+                    "llm_gemini": "🔎 Analyzed by LLM from the live scraped page",
+                    "llm_gemini_estimated": "⚠️ LLM analysis — page text unavailable, estimated from role/company",
+                    "scraped_page_keyword_extraction": "🔎 Keyword-extracted from the live scraped page (no LLM key set)",
+                    "estimated_no_scrape_no_llm": "⚠️ Estimated — page could not be scraped and no LLM key is set"
+                }[a.analysis_source] || "";
+
+                // Conditional rendering for Hard Skills block
+                const hasHardSkills = a.hard_skills && a.hard_skills.length > 0;
+                const hardSkillsHtml = hasHardSkills ? `
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded bg-light h-100">
+                            <h6 class="text-success"><strong>🛠️ Hard Skill:</strong></h6>
+                            <ul class="mb-0">${a.hard_skills.map(s => `<li>${s}</li>`).join('')}</ul>
+                        </div>
+                    </div>
+                ` : '';
+
+                const softSkillsColClass = hasHardSkills ? "col-md-6" : "col-12";
+
+                let content = `
+                    <div class="mb-3">
+                        <h5 class="mb-1"><strong>${title}</strong> at <em>${company}</em></h5>
+                        <span class="badge bg-secondary">📍 Location: ${location}</span>
+                        ${sourceLabel ? `<div class="source-note mt-1">${sourceLabel}</div>` : ''}
+                    </div>
+
+                    <div class="alert alert-light border mb-3">
+                        <h6><strong>📄 Job Description:</strong></h6>
+                        <p class="mb-0 text-muted">${a.job_description}</p>
+                    </div>
+
+                    <div class="p-3 border rounded bg-light mb-3">
+                        <h6 class="text-primary"><strong>🎓 Expected Qualification:</strong></h6>
+                        <ul class="mb-0">${(a.expected_qualifications || []).map(q => `<li>${q}</li>`).join('')}</ul>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        ${hardSkillsHtml}
+                        <div class="${softSkillsColClass}">
+                            <div class="p-3 border rounded bg-light h-100">
+                                <h6 class="text-info"><strong>💡 Required Soft Skill:</strong></h6>
+                                <ul class="mb-0">${a.soft_skills.map(s => `<li>${s}</li>`).join('')}</ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-3 border rounded bg-warning bg-opacity-10 mb-3">
+                        <h6 class="text-warning-emphasis"><strong>📌 Important Notes:</strong></h6>
+                        <ul class="mb-0">${a.important_notes.map(n => `<li>${n}</li>`).join('')}</ul>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <h6><strong>🚀 Actionable Prep Plan:</strong></h6>
+                            <ol class="mb-0">${a.skill_gap_roadmap.map(r => `<li>${r}</li>`).join('')}</ol>
+                        </div>
+                        <div class="col-md-6">
+                            <h6><strong>❓ Targeted Interview Prep:</strong></h6>
+                            <ul class="mb-0">${a.interview_prep_questions.map(q => `<li>${q}</li>`).join('')}</ul>
+                        </div>
+                    </div>
+                `;
+
+                document.getElementById('analysisContent').innerHTML = content;
+                document.getElementById('matchCard').classList.remove('d-none');
+                document.getElementById('matchContent').innerHTML = '';
+                document.getElementById('analysisCard').scrollIntoView({ behavior: 'smooth' });
+            } catch (err) {
+                document.getElementById('analysisContent').innerHTML = '<p class="text-danger">Failed to execute Strategist Agent analysis.</p>';
+            }
+        }
+
+        async function calculateMatch() {
+            if (!currentJob || !currentAnalysis) return;
+
+            const skills = document.getElementById('profSkills').value.split(',').map(s => s.trim()).filter(Boolean);
+            const years = parseFloat(document.getElementById('profYears').value) || 0;
+            const locPref = document.getElementById('profLoc').value.trim() || "Any";
+            const interests = document.getElementById('profInterests').value.split(',').map(s => s.trim()).filter(Boolean);
+
+            document.getElementById('matchContent').innerHTML = '<div class="spinner-border spinner-border-sm text-success"></div> Scoring your fit...';
+
+            try {
+                const res = await fetch('/api/match', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        job: currentJob,
+                        strategist_analysis: currentAnalysis,
+                        student_profile: { skills, years_experience: years, location_preference: locPref, interests }
+                    })
+                });
+
+                const data = await res.json();
+                if (data.error) {
+                    document.getElementById('matchContent').innerHTML = `<p class="text-danger">${data.error}</p>`;
+                    return;
+                }
+
+                const m = data.match;
+                const barColor = m.fit_score >= 80 ? 'bg-success' : m.fit_score >= 60 ? 'bg-info' : m.fit_score >= 40 ? 'bg-warning' : 'bg-danger';
+
+                const rowsHtml = Object.entries(m.breakdown).map(([key, val]) => {
+                    const label = {
+                        skill_overlap: "Skill overlap",
+                        experience_alignment: "Experience alignment",
+                        location_compatibility: "Location compatibility",
+                        interest_alignment: "Interest alignment"
+                    }[key] || key;
+                    return `
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>${label}</span><span>${val.score}</span>
+                            </div>
+                            <div class="progress" style="height:6px;">
+                                <div class="progress-bar ${barColor}" style="width:${val.score}%;"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                const matchedPills = (m.breakdown.skill_overlap.matched || []).map(s => `<span class="badge bg-success bg-opacity-25 text-success border border-success me-1 mb-1">✓ ${s}</span>`).join('');
+                const missingPills = (m.breakdown.skill_overlap.missing || []).map(s => `<span class="badge bg-danger bg-opacity-25 text-danger border border-danger me-1 mb-1">${s}</span>`).join('');
+
+                document.getElementById('matchContent').innerHTML = `
+                    <div class="d-flex align-items-center gap-4 mb-3">
+                        <div class="display-4 fw-bold text-${barColor.replace('bg-','')}">${m.fit_score}</div>
+                        <div>
+                            <div class="fs-5 fw-semibold">${m.verdict}</div>
+                            <div class="text-muted small">Weighted across skills, experience, location &amp; interests</div>
+                        </div>
+                    </div>
+                    ${rowsHtml}
+                    <div class="mt-3">${matchedPills}${missingPills}</div>
+                `;
+            } catch (err) {
+                document.getElementById('matchContent').innerHTML = '<p class="text-danger">Failed to execute Recruiter-Match analysis.</p>';
+            }
+        }
+    </script>
+</body>
+</html>
